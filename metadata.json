@@ -1,0 +1,7 @@
+{
+  "name": "AURA - Assistente Pessoal Inteligente",
+  "description": "Interface futurista, responsiva e com suporte a voz para a assistente de inteligência artificial AURA.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
