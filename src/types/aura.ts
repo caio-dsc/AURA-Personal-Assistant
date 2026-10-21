@@ -24,6 +24,8 @@ export interface ChatMessage {
   isSimulated?: boolean;
   isError?: boolean;
   model?: string;
+  searchedWeb?: boolean;
+  searchQuery?: string;
 }
 
 export interface Conversation {
@@ -41,7 +43,10 @@ export interface VoiceSettings {
   autoSpeak: boolean; // whether to automatically speak AI responses
 }
 
+export type VoiceInputStatus = 'idle' | 'listening' | 'transcribing' | 'sending' | 'error';
+
 export interface SpeechRecognitionState {
+  status: VoiceInputStatus;
   isListening: boolean;
   transcript: string;
   interimTranscript: string;

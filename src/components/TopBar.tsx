@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Sliders, Network, Download, Sparkles } from 'lucide-react';
+import { Menu, Sliders, Network, Download, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { AuraState } from '../types/aura';
 
 interface TopBarProps {
@@ -10,6 +10,8 @@ interface TopBarProps {
   onOpenArchitecture: () => void;
   onInstallPWA?: () => void;
   isPWAInstallable?: boolean;
+  autoSpeak: boolean;
+  onToggleAutoSpeak: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -20,6 +22,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenArchitecture,
   onInstallPWA,
   isPWAInstallable = false,
+  autoSpeak,
+  onToggleAutoSpeak,
 }) => {
   const statesList: { key: AuraState; label: string }[] = [
     { key: 'idle', label: 'Repouso' },
@@ -91,9 +95,30 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         )}
 
+        {/* Quick Voice Output Mute/Unmute Toggle */}
+        <button
+          onClick={onToggleAutoSpeak}
+          className={`min-h-[44px] min-w-[44px] px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+            autoSpeak
+              ? 'bg-cyan-950/50 hover:bg-cyan-900/50 text-cyan-300 border-cyan-500/30'
+              : 'bg-slate-900/70 hover:bg-slate-800/80 text-slate-400 border-slate-800'
+          }`}
+          title={autoSpeak ? 'Resposta por voz ativada (clique para silenciar)' : 'Resposta por voz silenciada (clique para ativar)'}
+          aria-label={autoSpeak ? 'Silenciar voz' : 'Ativar voz'}
+        >
+          {autoSpeak ? (
+            <Volume2 className="w-4 h-4 text-cyan-400" />
+          ) : (
+            <VolumeX className="w-4 h-4 text-slate-500" />
+          )}
+          <span className="hidden sm:inline text-[11px] font-mono">
+            {autoSpeak ? 'Voz ON' : 'Voz OFF'}
+          </span>
+        </button>
+
         <button
           onClick={onOpenVoiceSettings}
-          className="min-h-[44px] min-w-[44px] px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 text-slate-200 border border-slate-700/60 text-xs font-medium flex items-center gap-1.5 transition-colors"
+          className="min-h-[44px] min-w-[44px] px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 text-slate-200 border border-slate-700/60 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
           title="Ajustar vozes em português brasileiro e velocidade"
         >
           <Sliders className="w-3.5 h-3.5 text-cyan-400" />

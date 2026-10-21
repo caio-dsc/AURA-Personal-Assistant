@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Volume2, Play, Sliders, Check } from 'lucide-react';
+import { X, Play, Sliders, Check, Square, Info } from 'lucide-react';
 import { VoiceSettings } from '../types/aura';
 import { speechService } from '../services/speechService';
 
@@ -41,6 +41,12 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
   if (!isOpen) return null;
 
   const handleTestVoice = () => {
+    if (isPlayingTest) {
+      speechService.stopSpeaking();
+      setIsPlayingTest(false);
+      return;
+    }
+
     setIsPlayingTest(true);
     speechService.speak(
       'Olá! Eu sou a AURA, sua assistente pessoal inteligente. A voz está configurada com sucesso.',
@@ -54,12 +60,20 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
   };
 
   const handleSave = () => {
+    speechService.stopSpeaking();
+    setIsPlayingTest(false);
     onSaveSettings(localSettings);
     onClose();
   };
 
-  const ptVoices = voices.filter((v) => v.lang.toLowerCase().includes('pt'));
-  const otherVoices = voices.filter((v) => !v.lang.toLowerCase().includes('pt'));
+  const handleCancel = () => {
+    speechService.stopSpeaking();
+    setIsPlayingTest(false);
+    onClose();
+  };
+
+  const ptVoices = voices.filter((v) => v.lang.replace('_', '-').toLowerCase().startsWith('pt'));
+  const otherVoices = voices.filter((v) => !v.lang.replace('_', '-').toLowerCase().startsWith('pt'));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
@@ -80,8 +94,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-white rounded-lg transition-colors"
+            onClick={handleCancel}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
             aria-label="Fechar"
           >
             <X className="w-5 h-5" />
@@ -90,6 +104,16 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1">
+          {/* Missing pt-BR voice alert */}
+          {ptVoices.length === 0 && voices.length > 0 && (
+            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                Nenhuma voz nativa em pt-BR encontrada instalada no dispositivo. A AURA utilizará a voz padrão do sistema com pronúncia adaptada para português.
+              </span>
+            </div>
+          )}
+
           {/* Voice Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
@@ -137,8 +161,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
               </div>
               <input
                 type="range"
-                min="0.6"
-                max="1.6"
+                min="0.5"
+                max="1.8"
                 step="0.1"
                 value={localSettings.rate}
                 onChange={(e) =>
@@ -149,6 +173,11 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
                 }
                 className="w-full accent-cyan-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
               />
+              <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                <span>0.5x (Lenta)</span>
+                <span>1.0x (Normal)</span>
+                <span>1.8x (Rápida)</span>
+              </div>
             </div>
 
             <div>
@@ -182,7 +211,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
                 Falar respostas automaticamente
               </span>
               <span className="block text-xs text-slate-400">
-                Lê as respostas de texto geradas pela AURA em voz alta
+                Lê as novas respostas da AURA em voz alta usando SpeechSynthesis
               </span>
             </div>
             <button
@@ -193,9 +222,10 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
                   autoSpeak: !localSettings.autoSpeak,
                 })
               }
-              className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors ${
+              className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
                 localSettings.autoSpeak ? 'bg-cyan-500 justify-end' : 'bg-slate-700 justify-start'
               }`}
+              aria-label="Ativar leitura automática"
             >
               <span className="w-4 h-4 rounded-full bg-white shadow-sm" />
             </button>
@@ -206,11 +236,19 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
             <button
               type="button"
               onClick={handleTestVoice}
-              disabled={isPlayingTest}
-              className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center justify-center gap-2 border border-slate-700 transition-colors"
+              className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center justify-center gap-2 border border-slate-700 transition-colors cursor-pointer"
             >
-              <Play className={`w-3.5 h-3.5 ${isPlayingTest ? 'text-cyan-400 animate-spin' : ''}`} />
-              <span>{isPlayingTest ? 'Reproduzindo teste...' : 'Ouvir Teste de Voz'}</span>
+              {isPlayingTest ? (
+                <>
+                  <Square className="w-3.5 h-3.5 text-rose-400 fill-current" />
+                  <span>Interromper Teste de Voz</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Ouvir Teste de Voz (pt-BR)</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -218,14 +256,14 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800/80 bg-[#070b16]">
           <button
-            onClick={onClose}
-            className="min-h-[44px] px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+            onClick={handleCancel}
+            className="min-h-[44px] px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             Cancelar
           </button>
           <button
             onClick={handleSave}
-            className="min-h-[44px] px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl shadow-lg shadow-cyan-950/40 hover:brightness-110 transition-all flex items-center gap-1.5"
+            className="min-h-[44px] px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl shadow-lg shadow-cyan-950/40 hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Check className="w-3.5 h-3.5" />
             <span>Salvar Configurações</span>

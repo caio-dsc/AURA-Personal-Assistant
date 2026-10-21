@@ -4,9 +4,11 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AuraState, ChatMessage, Conversation, VoiceSettings } from './types/aura';
+import { Globe } from 'lucide-react';
+import { AuraState, ChatMessage, Conversation } from './types/aura';
 import { auraService, INITIAL_CONVERSATIONS } from './services/auraService';
-import { speechService } from './services/speechService';
+import { shouldSearchWeb } from './server/searchService';
+import { useAuraVoice } from './hooks/useAuraVoice';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
@@ -38,34 +40,8 @@ export default function App() {
 
   // Visual state of the AI Core
   const [auraState, setAuraState] = useState<AuraState>('idle');
-  const [audioLevel, setAudioLevel] = useState<number>(0);
-
-  // Speech Recognition & Synthesis state
-  const [isListening, setIsListening] = useState(false);
-  const [interimTranscript, setInterimTranscript] = useState('');
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-
-  // Voice Settings
-  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('aura_voice_settings');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          // fallback
-        }
-      }
-    }
-    return {
-      voiceURI: '',
-      rate: 1.0,
-      pitch: 1.0,
-      volume: 1.0,
-      autoSpeak: true,
-    };
-  });
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false);
 
   // UI Modals & Drawers
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -79,9 +55,29 @@ export default function App() {
   // PWA Install hook
   const { isInstallable, isIOS, install } = usePWAInstall();
 
-  // Microphone audio feedback loop & request abort controller
-  const audioIntervalRef = useRef<number | null>(null);
+  // Request abort controller ref
   const currentAbortRef = useRef<AbortController | null>(null);
+
+  // Unified Voice Interaction Hook (STT & TTS)
+  const {
+    voiceInputStatus,
+    isListening,
+    isSpeaking,
+    interimTranscript,
+    voiceError,
+    audioLevel,
+    voiceSettings,
+    setVoiceSettings,
+    toggleAutoSpeak,
+    isRecognitionSupported,
+    toggleListening,
+    cancelListening,
+    speak,
+    stopSpeaking,
+  } = useAuraVoice({
+    onSendMessage: (text) => handleSendMessage(text),
+    isBusy: auraState === 'thinking',
+  });
 
   // Verifica status do backend OpenRouter na inicialização
   useEffect(() => {
@@ -98,39 +94,6 @@ export default function App() {
       // storage quota or private browsing
     }
   }, [conversations]);
-
-  // Save voice settings to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('aura_voice_settings', JSON.stringify(voiceSettings));
-    } catch {
-      // ignore
-    }
-  }, [voiceSettings]);
-
-  // Audio level polling when listening
-  useEffect(() => {
-    if (isListening) {
-      audioIntervalRef.current = window.setInterval(() => {
-        const level = speechService.getAudioVolume();
-        setAudioLevel(level);
-      }, 50);
-    } else {
-      if (audioIntervalRef.current) {
-        clearInterval(audioIntervalRef.current);
-        audioIntervalRef.current = null;
-      }
-      if (!isSpeaking) {
-        setAudioLevel(0);
-      }
-    }
-
-    return () => {
-      if (audioIntervalRef.current) {
-        clearInterval(audioIntervalRef.current);
-      }
-    };
-  }, [isListening, isSpeaking]);
 
   const activeConversation =
     conversations.find((c) => c.id === activeConversationId) ||
@@ -151,6 +114,9 @@ export default function App() {
     };
     setConversations([newConv, ...conversations]);
     setActiveConversationId(newConv.id);
+    stopSpeaking();
+    cancelListening();
+    setIsSearchingWeb(false);
     setAuraState('idle');
   };
 
@@ -167,38 +133,15 @@ export default function App() {
     }
   };
 
-  // Core Speech Synthesis execution
-  const speakText = (text: string) => {
-    speechService.stopSpeaking();
-    setIsSpeaking(true);
-    setAuraState('speaking');
-
-    speechService.speak(text, voiceSettings, {
-      onStart: () => {
-        setIsSpeaking(true);
-        setAuraState('speaking');
-      },
-      onEnd: () => {
-        setIsSpeaking(false);
-        setAuraState('idle');
-      },
-      onError: () => {
-        setIsSpeaking(false);
-        setAuraState('idle');
-      },
-    });
-  };
-
-  // Interrupt Speech or active Thinking / generation
-  const handleStopSpeaking = () => {
+  // Interrupt Speech, active thinking or active recording
+  const handleStopAll = () => {
     if (currentAbortRef.current) {
       currentAbortRef.current.abort();
       currentAbortRef.current = null;
     }
-    speechService.stopSpeaking();
-    speechService.stopListening();
-    setIsSpeaking(false);
-    setIsListening(false);
+    stopSpeaking();
+    cancelListening();
+    setIsSearchingWeb(false);
     setAuraState('idle');
   };
 
@@ -209,8 +152,7 @@ export default function App() {
     if (!trimmed || auraState === 'thinking') return;
 
     // Interrupt any ongoing speech
-    speechService.stopSpeaking();
-    setIsSpeaking(false);
+    stopSpeaking();
     setSpeechError(null);
 
     const userMessage: ChatMessage = {
@@ -237,6 +179,10 @@ export default function App() {
       )
     );
 
+    // Determina se a pergunta atual requer pesquisa em tempo real na web
+    const searchDecision = shouldSearchWeb(trimmed);
+    setIsSearchingWeb(searchDecision.requiresSearch);
+
     // Mostre o estado Pensando enquanto a requisição estiver em andamento
     setAuraState('thinking');
 
@@ -244,9 +190,10 @@ export default function App() {
     currentAbortRef.current = controller;
 
     try {
-      // Chamada real ao endpoint /api/chat
+      // Chamada real ao endpoint /api/chat conectado ao OpenRouter
       const response = await auraService.sendMessage(trimmed, updatedMessages, controller.signal);
       currentAbortRef.current = null;
+      setIsSearchingWeb(false);
 
       // Exiba a resposta real da IA quando ela chegar
       const assistantMessage: ChatMessage = {
@@ -255,6 +202,8 @@ export default function App() {
         content: response.content,
         timestamp: new Date(),
         sources: response.sources,
+        searchedWeb: response.searchedWeb,
+        searchQuery: response.searchQuery,
         isSimulated: false,
         model: response.model,
       };
@@ -267,17 +216,17 @@ export default function App() {
         )
       );
 
-      // Atualiza status da chave para positivo se obteve resposta com sucesso
       setIsKeyConfigured(true);
 
-      // Auto-read aloud se habilitado
+      // Leitura por voz automática se habilitada nas configurações
       if (voiceSettings.autoSpeak) {
-        speakText(response.content);
+        speak(response.content, assistantMessage.id);
       } else {
         setAuraState('idle');
       }
     } catch (err: unknown) {
       currentAbortRef.current = null;
+      setIsSearchingWeb(false);
       const errorMsg = err instanceof Error ? err.message : 'Falha ao processar solicitação.';
 
       // Se a geração foi cancelada pelo usuário, apenas retorne ao repouso
@@ -289,7 +238,7 @@ export default function App() {
       setAuraState('error');
       setSpeechError(errorMsg);
 
-      // Adiciona o erro real da IA como mensagem explicativa para o usuário
+      // Adiciona o erro real como mensagem explicativa para o usuário
       const errorMessage: ChatMessage = {
         id: `msg-err-${Date.now()}`,
         role: 'assistant',
@@ -313,71 +262,42 @@ export default function App() {
     }
   };
 
-  // Toggle Microphone Listening
-  const handleToggleListening = () => {
-    if (isListening) {
-      speechService.stopListening();
-      setIsListening(false);
-      setAuraState('idle');
-    } else {
-      setSpeechError(null);
-      setInterimTranscript('');
-      setIsListening(true);
-      setAuraState('listening');
-
-      speechService.startListening({
-        onStart: () => {
-          setIsListening(true);
-          setAuraState('listening');
-        },
-        onResult: (transcript, isFinal) => {
-          if (isFinal) {
-            setInterimTranscript('');
-            setIsListening(false);
-            speechService.stopListening();
-            handleSendMessage(transcript);
-          } else {
-            setInterimTranscript(transcript);
-          }
-        },
-        onError: (err) => {
-          setIsListening(false);
-          setSpeechError(err);
-          setAuraState('error');
-          setTimeout(() => setAuraState('idle'), 3000);
-        },
-        onEnd: () => {
-          setIsListening(false);
-          if (auraState === 'listening') {
-            setAuraState('idle');
-          }
-        },
-      });
-    }
-  };
-
   // Clicking the AI Sphere directly
   const handleCoreClick = () => {
-    if (isSpeaking || auraState === 'speaking') {
-      handleStopSpeaking();
+    if (isSpeaking) {
+      stopSpeaking();
     } else if (isListening) {
-      handleToggleListening();
-    } else if (speechService.isSpeechRecognitionSupported()) {
-      handleToggleListening();
+      cancelListening();
+    } else if (auraState === 'thinking') {
+      handleStopAll();
+    } else if (isRecognitionSupported) {
+      toggleListening();
     }
   };
 
-  // Manual state preview selector (to inspect visual states easily)
+  // State preview selector (to inspect visual states manually)
   const handleSetStatePreview = (previewState: AuraState) => {
     if (previewState === 'speaking' && !isSpeaking) {
-      speakText('Testando o estado vocal da AURA em português brasileiro.');
+      speak('Testando a voz da assistente AURA em português brasileiro.');
     } else if (previewState === 'listening' && !isListening) {
-      handleToggleListening();
+      toggleListening();
     } else {
-      handleStopSpeaking();
+      handleStopAll();
       setAuraState(previewState);
     }
   };
+
+  // Active state of the Sphere Core
+  const activeCoreState: AuraState =
+    auraState === 'error'
+      ? 'error'
+      : auraState === 'thinking'
+      ? 'thinking'
+      : isSpeaking
+      ? 'speaking'
+      : isListening
+      ? 'listening'
+      : 'idle';
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#05070f] text-slate-100 aura-ambient-bg font-sans">
@@ -401,12 +321,14 @@ export default function App() {
         {/* Top Bar with Brand, State Selector, Actions */}
         <TopBar
           onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
-          currentState={auraState}
+          currentState={activeCoreState}
           onSetStatePreview={handleSetStatePreview}
           onOpenVoiceSettings={() => setIsVoiceSettingsOpen(true)}
           onOpenArchitecture={() => setIsArchitectureOpen(true)}
           onInstallPWA={isIOS ? () => setShowIOSInstallGuide(true) : install}
           isPWAInstallable={isInstallable || isIOS}
+          autoSpeak={voiceSettings.autoSpeak}
+          onToggleAutoSpeak={toggleAutoSpeak}
         />
 
         {/* Content Container: AI Core + Messages Feed */}
@@ -414,7 +336,7 @@ export default function App() {
           {/* Luminous AI Core Sphere */}
           <section className="shrink-0 pt-3 pb-2 flex flex-col items-center justify-center">
             <AuraCore
-              state={auraState}
+              state={activeCoreState}
               audioLevel={audioLevel}
               size={activeConversation.messages.length === 0 ? 250 : 170}
               onClick={handleCoreClick}
@@ -427,7 +349,7 @@ export default function App() {
             <MessageList
               messages={activeConversation.messages}
               onSelectPrompt={handleSendMessage}
-              onSpeakMessage={speakText}
+              onSpeakMessage={(text) => speak(text)}
               isSpeaking={isSpeaking}
               isKeyConfigured={isKeyConfigured}
               onOpenArchitecture={() => setIsArchitectureOpen(true)}
@@ -438,14 +360,17 @@ export default function App() {
           <footer className="shrink-0 z-20">
             <InputArea
               onSendMessage={handleSendMessage}
-              onToggleListening={handleToggleListening}
-              onStopSpeaking={handleStopSpeaking}
-              state={auraState}
-              isListening={isListening}
+              onToggleListening={toggleListening}
+              onCancelListening={cancelListening}
+              onStopSpeaking={handleStopAll}
+              state={activeCoreState}
+              voiceInputStatus={voiceInputStatus}
               isSpeaking={isSpeaking}
-              isRecognitionSupported={speechService.isSpeechRecognitionSupported()}
+              isRecognitionSupported={isRecognitionSupported}
               interimTranscript={interimTranscript}
-              errorMessage={speechError}
+              errorMessage={voiceError || speechError}
+              onClearError={() => setSpeechError(null)}
+              isSearchingWeb={isSearchingWeb}
             />
           </footer>
         </div>
@@ -476,7 +401,7 @@ export default function App() {
             </p>
             <button
               onClick={() => setShowIOSInstallGuide(false)}
-              className="mt-5 w-full min-h-[44px] rounded-xl bg-slate-800 hover:bg-slate-700 py-2 text-xs font-semibold text-white transition-colors"
+              className="mt-5 w-full min-h-[44px] rounded-xl bg-slate-800 hover:bg-slate-700 py-2 text-xs font-semibold text-white transition-colors cursor-pointer"
             >
               Entendido
             </button>

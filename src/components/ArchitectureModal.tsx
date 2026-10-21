@@ -124,7 +124,7 @@ app.post('/api/chat', async (req, res) => {
             <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-3">
               Fluxo Arquitetural da Aplicação
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="p-3.5 rounded-xl bg-[#05070f] border border-slate-800 space-y-1.5">
                 <div className="flex items-center gap-2 text-cyan-400 font-semibold text-xs">
                   <div className="w-2 h-2 rounded-full bg-cyan-400" />
@@ -138,20 +138,30 @@ app.post('/api/chat', async (req, res) => {
               <div className="p-3.5 rounded-xl bg-[#05070f] border border-slate-800 space-y-1.5">
                 <div className="flex items-center gap-2 text-purple-400 font-semibold text-xs">
                   <Server className="w-3.5 h-3.5" />
-                  <span>2. Backend Node.js</span>
+                  <span>2. Backend Node</span>
                 </div>
                 <p className="text-[12px] text-slate-400">
-                  Express Server guardando <code className="text-purple-300 font-mono">OPENROUTER_API_KEY</code> em variável de ambiente.
+                  Express Server guardando chaves e decidindo se a consulta exige busca recente.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-[#05070f] border border-slate-800 space-y-1.5">
+                <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs">
+                  <span className="w-2 h-2 rounded-full bg-blue-400" />
+                  <span>3. Tavily Search</span>
+                </div>
+                <p className="text-[12px] text-slate-400">
+                  Motor de pesquisa para IA via <code className="text-blue-300 font-mono">TAVILY_API_KEY</code> para fatos em tempo real.
                 </p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-[#05070f] border border-slate-800 space-y-1.5">
                 <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
                   <Key className="w-3.5 h-3.5" />
-                  <span>3. OpenRouter API</span>
+                  <span>4. OpenRouter</span>
                 </div>
                 <p className="text-[12px] text-slate-400">
-                  Gateway agnóstico de modelos (Claude 3.5, Llama 3.3, Mistral, etc.) sem acoplamento.
+                  Sintetiza a resposta com base no prompt de sistema e nas fontes web recolhidas.
                 </p>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Copy, ExternalLink, Volume2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, Volume2, Globe } from 'lucide-react';
 import { ChatMessage } from '../types/aura';
 
 interface MessageBubbleProps {
@@ -158,11 +158,21 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/50">
                   Aviso
                 </span>
-              ) : message.model ? (
-                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800/80 text-cyan-300/80 border border-slate-700/50">
-                  {message.model}
-                </span>
-              ) : null}
+              ) : (
+                <>
+                  {message.searchedWeb && (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 font-medium">
+                      <Globe className="w-2.5 h-2.5" />
+                      <span>Web</span>
+                    </span>
+                  )}
+                  {message.model && (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800/80 text-cyan-300/80 border border-slate-700/50">
+                      {message.model}
+                    </span>
+                  )}
+                </>
+              )}
             </div>
 
             {onSpeak && (
@@ -186,31 +196,63 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         {/* Research Sources & Citations Area */}
         {message.sources && message.sources.length > 0 && (
           <div className="mt-4 pt-3 border-t border-slate-800/80">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 mb-2">
-              <span>Fontes e Referências de Pesquisa</span>
-              <span className="text-slate-500">({message.sources.length})</span>
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-2">
+              <div className="flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Fontes e Referências de Pesquisa</span>
+                <span className="text-slate-500">({message.sources.length})</span>
+              </div>
+              {message.searchQuery && (
+                <span
+                  className="text-[10px] text-cyan-400/80 font-mono truncate max-w-[200px]"
+                  title={`Consulta pesquisada: "${message.searchQuery}"`}
+                >
+                  &ldquo;{message.searchQuery}&rdquo;
+                </span>
+              )}
             </div>
-            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {message.sources.map((source, sIdx) => (
                 <a
                   key={sIdx}
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-start gap-2 p-2 rounded-lg bg-[#070b16]/70 border border-slate-800/80 hover:border-cyan-500/40 hover:bg-[#0b1429] transition-all group"
+                  className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#070b16]/70 border border-slate-800/80 hover:border-cyan-500/40 hover:bg-[#0b1429] transition-all group"
+                  title={`Abrir fonte: ${source.title}`}
                 >
                   <ExternalLink className="w-3.5 h-3.5 text-cyan-400 mt-0.5 shrink-0 group-hover:translate-x-0.5 transition-transform" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-slate-200 truncate group-hover:text-cyan-300">
                       {source.title}
                     </p>
-                    {source.domain && (
-                      <p className="text-[11px] text-slate-500 truncate">{source.domain}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {source.domain && (
+                        <p className="text-[11px] text-cyan-400 font-mono truncate">{source.domain}</p>
+                      )}
+                    </div>
+                    {source.snippet && (
+                      <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                        {source.snippet}
+                      </p>
                     )}
+                    <span className="text-[10px] text-slate-500 font-mono truncate block mt-1 group-hover:text-slate-400">
+                      {source.url}
+                    </span>
                   </div>
                 </a>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Informa quando pesquisa web foi realizada mas não retornou fontes externas utilizáveis */}
+        {message.searchedWeb && (!message.sources || message.sources.length === 0) && (
+          <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center gap-2 text-xs text-slate-400">
+            <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span>
+              Pesquisa web realizada{message.searchQuery ? ` para "${message.searchQuery}"` : ''}: nenhuma fonte externa utilizável localizada.
+            </span>
           </div>
         )}
 

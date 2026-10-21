@@ -13,11 +13,14 @@ export interface AuraResponse {
   sources?: CitationSource[];
   isReal: boolean;
   model: string;
+  searchedWeb?: boolean;
+  searchQuery?: string;
 }
 
 export interface BackendStatus {
   status: 'online' | 'offline';
   isKeyConfigured: boolean;
+  isTavilyConfigured?: boolean;
   model: string;
 }
 
@@ -42,6 +45,7 @@ export class AuraService {
         return {
           status: 'online',
           isKeyConfigured: Boolean(data.isKeyConfigured),
+          isTavilyConfigured: Boolean(data.isTavilyConfigured),
           model: data.model || 'openrouter/free',
         };
       }
@@ -137,6 +141,8 @@ export class AuraService {
       sources: data.sources || [],
       isReal: true,
       model: data.model || 'openrouter/free',
+      searchedWeb: Boolean(data.searchedWeb),
+      searchQuery: data.searchQuery,
     };
   }
 }

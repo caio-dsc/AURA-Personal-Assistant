@@ -3,13 +3,29 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  shouldSearchWeb,
+  performTavilySearch,
+  formatSearchContextForPrompt,
+} from './src/server/searchService.ts';
+import { CitationSource } from './src/types/aura.ts';
 
 // Carrega variáveis de ambiente de .env e de C_Key.env
 dotenv.config();
 const potentialKeyPaths = ['C_Key.env', path.resolve(process.cwd(), 'C_Key.env'), '/C_Key.env'];
 for (const p of potentialKeyPaths) {
   if (fs.existsSync(p)) {
-    dotenv.config({ path: p });
+    try {
+      const content = fs.readFileSync(p, 'utf-8');
+      const parsed = dotenv.parse(content);
+      for (const [k, v] of Object.entries(parsed)) {
+        if (v && (!process.env[k] || process.env[k] === 'MY_OPENROUTER_API_KEY' || process.env[k] === 'MY_TAVILY_API_KEY')) {
+          process.env[k] = v;
+        }
+      }
+    } catch {
+      dotenv.config({ path: p });
+    }
     break;
   }
 }
@@ -33,18 +49,26 @@ interface ChatMessageInput {
   content: string;
 }
 
-// Endpoint de verificação de status do servidor e da chave (sem nunca expor a chave)
+// Endpoint de verificação de status do servidor e das chaves (sem nunca expor as chaves)
 app.get('/api/status', (_req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  const tavilyKey = process.env.TAVILY_API_KEY?.trim();
   const isKeyConfigured = Boolean(
     apiKey &&
       apiKey !== 'MY_OPENROUTER_API_KEY' &&
       apiKey !== 'sk-or-v1-...' &&
       apiKey.length > 10
   );
+  const isTavilyConfigured = Boolean(
+    tavilyKey &&
+      tavilyKey !== 'MY_TAVILY_API_KEY' &&
+      tavilyKey !== 'tvly-...' &&
+      tavilyKey.length > 5
+  );
   return res.json({
     status: 'online',
     isKeyConfigured,
+    isTavilyConfigured,
     model: 'openrouter/free',
   });
 });
@@ -108,9 +132,41 @@ app.post('/api/chat', async (req, res) => {
   // Limita o histórico às 15 mensagens mais recentes para não estourar o limite de contexto
   const recentMessages = sanitizedMessages.slice(-15);
 
+  // 3. Decisão de Pesquisa Automática na Web (Tavily)
+  const lastUserMsg = [...sanitizedMessages].reverse().find((m) => m.role === 'user');
+  const userPromptText = lastUserMsg?.content || '';
+  const searchDecision = shouldSearchWeb(userPromptText);
+
+  let searchSources: CitationSource[] = [];
+  let searchedWeb = false;
+  let searchContextDirective = '';
+
+  if (searchDecision.requiresSearch) {
+    const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+    const searchResult = await performTavilySearch(searchDecision.query, tavilyKey);
+
+    if (searchResult.success && searchResult.sources.length > 0) {
+      searchedWeb = true;
+      searchSources = searchResult.sources;
+      searchContextDirective = formatSearchContextForPrompt(searchSources, searchDecision.query);
+    } else if (searchResult.success && searchResult.sources.length === 0) {
+      searchedWeb = true;
+      searchContextDirective = `\n\n[AVISO DE PESQUISA: Foi realizada uma pesquisa na internet para "${searchDecision.query}", mas nenhuma fonte utilizável foi localizada. Informe ao usuário com clareza e transparência que a busca online não encontrou referências e responda com base no seu conhecimento prévio caso aplicável, esclarecendo a limitação de atualidade. Não invente fontes ou URLs.]`;
+    } else {
+      // Chave ausente, cota excedida ou erro de conexão no provedor Tavily
+      searchedWeb = false;
+      searchContextDirective = `\n\n[AVISO DE PESQUISA: Uma busca na internet sobre "${searchDecision.query}" era necessária para responder com máxima atualidade, porém o serviço de pesquisa está indisponível (${searchResult.error || 'sem conexão'}). Informe educadamente ao usuário em português brasileiro que a pesquisa na web em tempo real está indisponível no momento (${searchResult.error || 'serviço indisponível'}) e por isso suas informações podem não refletir os acontecimentos mais recentes. Não invente notícias ou fatos falsos.]`;
+    }
+  }
+
+  // Monta o prompt de sistema com as diretrizes de busca se aplicável
+  const finalSystemPrompt = searchContextDirective
+    ? `${SYSTEM_PROMPT}\n${searchContextDirective}`
+    : SYSTEM_PROMPT;
+
   // Garante a inclusão do prompt de sistema da AURA
   const fullMessages = [
-    { role: 'system' as const, content: SYSTEM_PROMPT },
+    { role: 'system' as const, content: finalSystemPrompt },
     ...recentMessages.filter((m) => m.role !== 'system'),
   ];
 
@@ -196,6 +252,9 @@ app.post('/api/chat', async (req, res) => {
       content: replyContent.trim(),
       model: data.model || 'openrouter/free',
       isReal: true,
+      searchedWeb,
+      searchQuery: searchDecision.requiresSearch ? searchDecision.query : undefined,
+      sources: searchSources,
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {

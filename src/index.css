@@ -134,3 +134,64 @@
 .animate-spin-reverse-slow {
   animation: spin-reverse-slow 18s linear infinite;
 }
+
+/* JARVIS Holographic HUD Animations */
+@keyframes hud-spin-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hud-spin-ccw {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes hud-pulse-glow {
+  0%, 100% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.4));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 16px rgba(0, 240, 255, 0.85));
+  }
+}
+
+@keyframes hud-sonic-ripple {
+  0% {
+    r: 45;
+    opacity: 0.8;
+    stroke-width: 2.5;
+  }
+  100% {
+    r: 175;
+    opacity: 0;
+    stroke-width: 0.5;
+  }
+}
+
+@keyframes hud-scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-animated-rotate,
+  .hud-animated-pulse {
+    animation-duration: 60s !important;
+    animation-iteration-count: 1 !important;
+    transform: none !important;
+  }
+}
